@@ -109,6 +109,10 @@
     "defaultValue": true
   },
   {
+    "name": "spring.elasticsearch.jest.uris",
+    "defaultValue": ["http://localhost:9200"]
+  },
+  {
     "name": "spring.http.encoding.enabled",
     "type": "java.lang.Boolean",
     "description": "Enable http encoding support.",
@@ -277,6 +281,12 @@
     "name": "spring.mvc.favicon.enabled",
     "type": "java.lang.Boolean",
     "description": "Enable resolution of favicon.ico.",
+    "defaultValue": true
+  },
+  {
+    "name": "spring.mvc.formcontent.putfilter.enabled",
+    "type": "java.lang.Boolean",
+    "description": "Enable Spring's HttpPutFormContentFilter.",
     "defaultValue": true
   },
   {

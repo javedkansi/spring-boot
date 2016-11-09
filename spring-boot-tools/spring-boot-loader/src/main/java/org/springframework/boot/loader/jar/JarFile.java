@@ -371,12 +371,16 @@ public class JarFile extends java.util.jar.JarFile {
 		return this.pathFromRoot;
 	}
 
+	JarFileType getType() {
+		return this.type;
+	}
+
 	/**
 	 * Register a {@literal 'java.protocol.handler.pkgs'} property so that a
 	 * {@link URLStreamHandler} will be located to deal with jar URLs.
 	 */
 	public static void registerUrlProtocolHandler() {
-		String handlers = System.getProperty(PROTOCOL_HANDLER);
+		String handlers = System.getProperty(PROTOCOL_HANDLER, "");
 		System.setProperty(PROTOCOL_HANDLER, ("".equals(handlers) ? HANDLERS_PACKAGE
 				: handlers + "|" + HANDLERS_PACKAGE));
 		resetCachedUrlHandlers();
@@ -396,7 +400,10 @@ public class JarFile extends java.util.jar.JarFile {
 		}
 	}
 
-	private enum JarFileType {
+	/**
+	 * The type of a {@link JarFile}.
+	 */
+	enum JarFileType {
 		DIRECT, NESTED_DIRECTORY, NESTED_JAR
 	}
 

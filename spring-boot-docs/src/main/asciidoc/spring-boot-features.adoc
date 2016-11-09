@@ -47,6 +47,48 @@ By default `INFO` logging messages will be shown, including some relevant startu
 such as the user that launched the application.
 
 
+
+[boot-features-startup-failure]
+=== Startup failure
+If your application fails to start, registered `FailureAnalyzers` get a chance to provide
+a dedicated error message and a concrete action to fix the problem. For instance if you
+start a web application on port `8080` and that port is already in use, you should see
+something similar to the following:
+
+[indent=0]
+----
+	***************************
+	APPLICATION FAILED TO START
+	***************************
+
+	Description:
+
+	Embedded servlet container failed to start. Port 8080 was already in use.
+
+	Action:
+
+	Identify and stop the process that's listening on port 8080 or configure this application to listen on another port.
+----
+
+NOTE: Spring Boot provides numerous `FailureAnalyzer` implementations and you can
+<<howto.adoc#howto-failure-analyzer,add your own>> very easily.
+
+If no failure analyzers are able to handle the exception, you can still display the full
+auto-configuration report to better understand what went wrong. To do so you need to
+<<boot-features-external-config,enable the `debug` property>> or
+<<boot-features-custom-log-levels,enable `DEBUG` logging>> for
+`org.springframework.boot.autoconfigure.logging.AutoConfigurationReportLoggingInitializer`.
+
+For instance, if you are running your application using `java -jar` you can enable the
+`debug` property as follows:
+
+[indent=0,subs="attributes"]
+----
+	$ java -jar myproject-0.0.1-SNAPSHOT.jar --debug
+----
+
+
+
 [[boot-features-banner]]
 === Customizing the Banner
 The banner that is printed on start up can be changed by adding a `banner.txt` file
@@ -149,11 +191,7 @@ For example:
 
 [source,java,indent=0]
 ----
-	new SpringApplicationBuilder()
-		.bannerMode(Banner.Mode.OFF)
-		.sources(Parent.class)
-		.child(Application.class)
-		.run(args);
+include::{code-examples}/builder/SpringApplicationBuilderExample.java[tag=hierarchy]
 ----
 
 NOTE: There are some restrictions when creating an `ApplicationContext` hierarchy, e.g.
@@ -331,8 +369,12 @@ via `@ConfigurationProperties`.
 Spring Boot uses a very particular `PropertySource` order that is designed to allow
 sensible overriding of values. Properties are considered in the following order:
 
+. <<using-boot-devtools-globalsettings,Devtools global settings properties>>
+  on your home directory (`~/.spring-boot-devtools.properties` when devtools is active).
 . {spring-javadoc}/test/context/TestPropertySource.{dc-ext}[`@TestPropertySource`]
   annotations on your tests.
+. {dc-spring-boot-test}/context/SpringBootTest.{dc-ext}[`@SpringBootTest#properties`]
+  annotation attribute on your tests.
 . Command line arguments.
 . Properties from `SPRING_APPLICATION_JSON` (inline JSON embedded in an environment
   variable or system property)
@@ -895,8 +937,8 @@ be used by IDEs. See the <<configuration-metadata>> appendix for details.
 [[boot-features-external-config-3rd-party-configuration]]
 ==== Third-party configuration
 As well as using `@ConfigurationProperties` to annotate a class, you can also use it
-on `@Bean` methods. This can be particularly useful when you want to bind properties to
-third-party components that are outside of your control.
+on public `@Bean` methods. This can be particularly useful when you want to bind
+properties to third-party components that are outside of your control.
 
 To configure a bean from the `Environment` properties, add `@ConfigurationProperties` to
 its bean registration:
@@ -1028,9 +1070,13 @@ as `@Valid` to trigger its validation. For example, building upon the above
 ----
 
 You can also add a custom Spring `Validator` by creating a bean definition called
-`configurationPropertiesValidator`. There is a
-{github-code}/spring-boot-samples/spring-boot-sample-property-validation[Validation sample]
-so you can see how to set things up.
+`configurationPropertiesValidator`. The `@Bean` method should be declared `static`. The
+configuration properties validator is created very early in the application's lifecycle
+and declaring the `@Bean` method as static allows the bean to be created without having to
+instantiate the `@Configuration` class. This avoids any problems that may be caused by
+early instantiation. There is a
+{github-code}/spring-boot-samples/spring-boot-sample-property-validation[property
+validation sample] so you can see how to set things up.
 
 TIP: The `spring-boot-actuator` module includes an endpoint that exposes all
 `@ConfigurationProperties` beans. Simply point your web browser to `/configprops`
@@ -1578,7 +1624,7 @@ The auto-configuration adds the following features on top of Spring's defaults:
 
 If you want to keep Spring Boot MVC features, and
 you just want to add additional {spring-reference}#mvc[MVC configuration] (interceptors,
-formatters, view controllers etc.) you can add your own `@Bean` of type
+formatters, view controllers etc.) you can add your own `@Configuration` class of type
 `WebMvcConfigurerAdapter`, but *without* `@EnableWebMvc`. If you wish to provide custom
 instances of `RequestMappingHandlerMapping`, `RequestMappingHandlerAdapter` or
 `ExceptionHandlerExceptionResolver` you can declare a `WebMvcRegistrationsAdapter`
@@ -1709,8 +1755,16 @@ Spring Boot also supports advanced resource handling features provided by Spring
 allowing use cases such as cache busting static resources or using version agnostic URLs
 for Webjars.
 
-For example, the following configuration will configure a cache busting solution
-for all static resources, effectively adding a content hash in URLs, such as
+To use version agnostic URLs for Webjars, simply add the `webjars-locator` dependency.
+Then declare your Webjar, taking jQuery for example, as `"/webjars/jquery/dist/jquery.min.js"`
+which results in `"/webjars/jquery/x.y.z/dist/jquery.min.js"` where `x.y.z` is the Webjar
+version.
+
+NOTE: If you are using JBoss, you'll need to declare the `webjars-locator-jboss-vfs`
+dependency instead of the `webjars-locator`; otherwise all Webjars resolve as a `404`.
+
+To use cache busting, the following configuration will configure a cache busting
+solution for all static resources, effectively adding a content hash in URLs, such as
 `<link href="/css/spring-2a2d595e6ed9a0b24f027f2b63b134d6.css"/>`:
 
 [source,properties,indent=0,subs="verbatim,quotes,attributes"]
@@ -1720,10 +1774,9 @@ for all static resources, effectively adding a content hash in URLs, such as
 ----
 
 NOTE: Links to resources are rewritten at runtime in template, thanks to a
-`ResourceUrlEncodingFilter`, auto-configured for Thymeleaf, Velocity and FreeMarker. You
-should manually declare this filter when using JSPs. Other template engines aren't
-automatically supported right now, but can be with custom template macros/helpers and the
-use of the
+`ResourceUrlEncodingFilter`, auto-configured for Thymeleaf and FreeMarker. You should
+manually declare this filter when using JSPs. Other template engines aren't automatically
+supported right now, but can be with custom template macros/helpers and the use of the
 {spring-javadoc}/web/servlet/resource/ResourceUrlProvider.{dc-ext}[`ResourceUrlProvider`].
 
 When loading resources dynamically with, for example, a JavaScript module loader, renaming
@@ -1767,7 +1820,7 @@ will automatically configure Spring MVC to use it.
 [[boot-features-spring-mvc-template-engines]]
 ==== Template engines
 As well as REST web services, you can also use Spring MVC to serve dynamic HTML content.
-Spring MVC supports a variety of templating technologies including Velocity, FreeMarker
+Spring MVC supports a variety of templating technologies including Thymeleaf, FreeMarker
 and JSPs. Many other templating engines also ship their own Spring MVC integrations.
 
 Spring Boot includes auto-configuration support for the following templating engines:
@@ -1775,7 +1828,6 @@ Spring Boot includes auto-configuration support for the following templating eng
  * http://freemarker.org/docs/[FreeMarker]
  * http://docs.groovy-lang.org/docs/next/html/documentation/template-engines.html#_the_markuptemplateengine[Groovy]
  * http://www.thymeleaf.org[Thymeleaf]
- * http://velocity.apache.org[Velocity] (deprecated in 1.4)
  * http://mustache.github.io/[Mustache]
 
 TIP: JSPs should be avoided if possible, there are several
@@ -2327,7 +2379,9 @@ explicitly configure the paths that you do want to override.
 [[boot-features-security-oauth2]]
 === OAuth2
 If you have `spring-security-oauth2` on your classpath you can take advantage of some
-auto-configuration to make it easy to set up Authorization or Resource Server.
+auto-configuration to make it easy to set up Authorization or Resource Server. For full
+details, see the {spring-security-oauth2-reference}[Spring Security OAuth 2 Developers
+Guide].
 
 
 
@@ -2599,6 +2653,14 @@ http://hsqldb.org/[HSQL] and http://db.apache.org/derby/[Derby] databases. You d
 to provide any connection URLs, simply include a build dependency to the embedded database
 that you want to use.
 
+[NOTE]
+====
+If you are using this feature in your tests, you may notice that the same database is
+reused by your whole test suite regardless of the number of application contexts that
+you use. If you want to make sure that each context has a separate embedded database,
+you should set `spring.datasource.generate-unique-name` to `true`.
+====
+
 For example, typical POM dependencies would be:
 
 [source,xml,indent=0]
@@ -2635,9 +2697,8 @@ Here's the algorithm for choosing a specific implementation:
 * We prefer the Tomcat pooling `DataSource` for its performance and concurrency, so if
   that is available we always choose it.
 * Otherwise, if HikariCP is available we will use it.
-* If neither the Tomcat pooling datasource nor HikariCP are available and if Commons DBCP
-  is available we will use it, but we don't recommend it in production.
-* Lastly, if Commons DBCP2 is available we will use it.
+* If neither the Tomcat pooling datasource nor HikariCP are available and if Commons
+  DBCP2 is available we will use it.
 
 If you use the `spring-boot-starter-jdbc` or `spring-boot-starter-data-jpa`
 '`starters`' you will automatically get a dependency to `tomcat-jdbc`.
@@ -2661,6 +2722,9 @@ DataSource configuration is controlled by external configuration properties in
 	spring.datasource.driver-class-name=com.mysql.jdbc.Driver
 ----
 
+NOTE: You should at least specify the url using the `spring.datasource.url` property or
+Spring Boot will attempt to auto-configure an embedded database.
+
 TIP: You often won't need to specify the `driver-class-name` since Spring boot can deduce
 it for most databases from the `url`.
 
@@ -2673,9 +2737,8 @@ See {sc-spring-boot-autoconfigure}/jdbc/DataSourceProperties.{sc-ext}[`DataSourc
 for more of the supported options. These are the standard options that work regardless of
 the actual implementation. It is also possible to fine-tune implementation-specific
 settings using their respective prefix (`+spring.datasource.tomcat.*+`,
-`+spring.datasource.hikari.*+`, `+spring.datasource.dbcp.*+` and
-`+spring.datasource.dbcp2.*+`). Refer to the documentation of the connection pool
-implementation you are using for more details.
+`+spring.datasource.hikari.*+`, and `+spring.datasource.dbcp2.*+`). Refer to the
+documentation of the connection pool implementation you are using for more details.
 
 For instance, if you are using the
 http://tomcat.apache.org/tomcat-8.0-doc/jdbc-pool.html#Common_Attributes[Tomcat connection pool]
@@ -3313,9 +3376,6 @@ properties:
 [[boot-features-connecting-to-neo4j-embedded]]
 ==== Using the embedded mode
 
-NOTE: Neo4j's embedded mode is subject to a different licensing, make sure to review it
-before integrating the dependency in your application.
-
 If you add `org.neo4j:neo4j-ogm-embedded-driver` to the dependencies of your application,
 Spring Boot will automatically configure an in-process embedded instance of Neo4j that
 will not persist any data when your application shuts down. You can explicitly disable
@@ -3349,7 +3409,7 @@ infrastructure; so you could take the JPA example from earlier and, assuming tha
 is now a Neo4j OGM `@NodeEntity` rather than a JPA `@Entity`, it will work in the same
 way.
 
-TIP: You can customize entity scanning locations using the `@NodeEntityScan` annotation.
+TIP: You can customize entity scanning locations using the `@EntityScan` annotation.
 
 To enable repository support (and optionally support for `@Transactional`), add the
 following two annotations to your Spring configuration:
@@ -3723,23 +3783,24 @@ enabled via the `@EnableCaching` annotation.
 NOTE: If you are using the cache infrastructure with beans that are not interface-based,
 make sure to enable the `proxyTargetClass` attribute of `@EnableCaching`.
 
-TIP: Use the `spring-boot-starter-cache` '`Starter`' to quickly add required caching
-dependencies. If you are adding dependencies manually you should note that certain
-implementations are only provided by the `spring-context-support` jar.
+TIP: Use the `spring-boot-starter-cache` '`Starter`' to quickly add basic caching
+dependencies. The starter brings `spring-context-support`: if you are adding dependencies
+manually, you must include it if you intend to use the JCache, EhCache 2.x or Guava
+support.
 
 If you haven't defined a bean of type `CacheManager` or a `CacheResolver` named
 `cacheResolver` (see `CachingConfigurer`), Spring Boot tries to detect the following
 providers (in this order):
 
 * <<boot-features-caching-provider-generic,Generic>>
-* <<boot-features-caching-provider-jcache,JCache (JSR-107)>>
+* <<boot-features-caching-provider-jcache,JCache (JSR-107)>> (EhCache 3, Hazelcast,
+  Infinispan, etc)
 * <<boot-features-caching-provider-ehcache2,EhCache 2.x>>
 * <<boot-features-caching-provider-hazelcast,Hazelcast>>
 * <<boot-features-caching-provider-infinispan,Infinispan>>
 * <<boot-features-caching-provider-couchbase,Couchbase>>
 * <<boot-features-caching-provider-redis,Redis>>
 * <<boot-features-caching-provider-caffeine,Caffeine>>
-* <<boot-features-caching-provider-guava,Guava>>
 * <<boot-features-caching-provider-simple,Simple>>
 
 TIP: It is also possible to _force_ the cache provider to use via the `spring.cache.type`
@@ -3780,12 +3841,17 @@ Generic caching is used if the context defines _at least_ one
 
 
 [[boot-features-caching-provider-jcache]]
-==== JCache
+==== JCache (JSR-107)
 JCache is bootstrapped via the presence of a `javax.cache.spi.CachingProvider` on the
-classpath (i.e. a JSR-107 compliant caching library). It might happen that more than one
-provider is present, in which case the provider must be explicitly specified. Even if the
-JSR-107 standard does not enforce a standardized way to define the location of the
-configuration file, Spring Boot does its best to accommodate with implementation details.
+classpath (i.e. a JSR-107 compliant caching library) and the `JCacheCacheManager`
+provided by the `spring-boot-starter-cache` '`Starter`'. There are various compliant
+libraries out there and Spring Boot provides dependency management for Ehcache 3,
+Hazelcast and Infinispan. Any other compliant library can be added as well.
+
+It might happen that more than one provider is present, in which case the provider must
+be explicitly specified. Even if the JSR-107 standard does not enforce a standardized
+way to define the location of the configuration file, Spring Boot does its best to
+accommodate with implementation details.
 
 [source,properties,indent=0]
 ----
@@ -3815,8 +3881,9 @@ abstraction expects. No further customization is applied on it.
 [[boot-features-caching-provider-ehcache2]]
 ==== EhCache 2.x
 EhCache 2.x is used if a file named `ehcache.xml` can be found at the root of the
-classpath. If EhCache 2.x and such file is present it is used to bootstrap the cache
-manager. An alternate configuration file can be provide a well using:
+classpath. If EhCache 2.x, the `EhCacheCacheManager` provided by the
+`spring-boot-starter-cache` '`Starter`' and such file is present it is used to bootstrap
+the cache manager. An alternate configuration file can be provide a well using:
 
 [source,properties,indent=0]
 ----
@@ -3863,8 +3930,9 @@ Caches can be created on startup via the `spring.cache.cache-names` property. If
 
 [[boot-features-caching-provider-couchbase]]
 ==== Couchbase
-If Couchbase is available and <<boot-features-couchbase,configured>>, a
-`CouchbaseCacheManager` is auto-configured. It is also possible to create additional
+If the Couchbase java client and the `couchbase-spring-cache` implementation are
+available and Couchbase is <<boot-features-couchbase,configured>>, a
+`CouchbaseCacheManager` will be auto-configured. It is also possible to create additional
 caches on startup using the `spring.cache.cache-names` property. These will operate on
 the `Bucket` that was auto-configured. You can _also_ create additional caches on another
 `Bucket` using the customizer: assume you need two caches on the "main" `Bucket` (`foo`
@@ -3928,10 +3996,11 @@ recommend to keep this setting enabled if you create your own `RedisCacheManager
 
 [[boot-features-caching-provider-caffeine]]
 ==== Caffeine
-Caffeine is a Java 8 rewrite of Guava’s cache and will supersede the Guava support in
-Spring Boot 2.0. If Caffeine is present, a `CaffeineCacheManager` is auto-configured.
-Caches can be created on startup using the `spring.cache.cache-names` property and
-customized by one of the following (in this order):
+Caffeine is a Java 8 rewrite of Guava’s cache that supersede the Guava support. If
+Caffeine is present, a `CaffeineCacheManager` (provided by the
+`spring-boot-starter-cache` '`Starter`') is auto-configured. Caches can be created
+on startup using the `spring.cache.cache-names` property and customized by one of the
+following (in this order):
 
 1. A cache spec defined by `spring.cache.caffeine.spec`
 2. A `com.github.benmanes.caffeine.cache.CaffeineSpec` bean is defined
@@ -3947,31 +4016,10 @@ size of 500 and a _time to live_ of 10 minutes
 ----
 
 Besides, if a `com.github.benmanes.caffeine.cache.CacheLoader` bean is defined, it is
-automatically associated to the `CaffeineCacheManager`.
-
-
-
-[[boot-features-caching-provider-guava]]
-==== Guava
-If Guava is present, a `GuavaCacheManager` is auto-configured. Caches can be created
-on startup using the `spring.cache.cache-names` property and customized by one of the
-following (in this order):
-
-1. A cache spec defined by `spring.cache.guava.spec`
-2. A `com.google.common.cache.CacheBuilderSpec` bean is defined
-3. A `com.google.common.cache.CacheBuilder` bean is defined
-
-For instance, the following configuration creates a `foo` and `bar` caches with a maximum
-size of 500 and a _time to live_ of 10 minutes
-
-[source,properties,indent=0]
-----
-    spring.cache.cache-names=foo,bar
-	spring.cache.guava.spec=maximumSize=500,expireAfterAccess=600s
-----
-
-Besides, if a `com.google.common.cache.CacheLoader` bean is defined, it is automatically
-associated to the `GuavaCacheManager`.
+automatically associated to the `CaffeineCacheManager`. Since the `CacheLoader` is
+going to be associated to _all_ caches managed by the cache manager, it must be defined
+as `CacheLoader<Object, Object>`. Any other generic type will be ignored by the
+auto-configuration.
 
 
 
@@ -4052,11 +4100,6 @@ resolved against their provided names.
 
 [[boot-features-artemis]]
 ==== Artemis support
-Apache Artemis was formed in 2015 when HornetQ was donated to the Apache Foundation. Make
-sure to use that rather than the deprecated HornetQ support.
-
-NOTE: You should not try and use Artemis and HornetQ and the same time.
-
 Spring Boot can auto-configure a `ConnectionFactory` when it detects that Artemis is
 available on the classpath. If the broker is present, an embedded broker is started and
 configured automatically (unless the mode property has been explicitly set). The supported
@@ -4097,55 +4140,6 @@ for more of the supported options.
 
 No JNDI lookup is involved at all and destinations are resolved against their names,
 either using the '`name`' attribute in the Artemis configuration or the names provided
-through configuration.
-
-
-
-[[boot-features-hornetq]]
-==== HornetQ support
-
-NOTE: HornetQ is deprecated in 1.4, consider migrating to <<boot-features-artemis,artemis>>
-
-Spring Boot can auto-configure a `ConnectionFactory` when it detects that HornetQ is
-available on the classpath. If the broker is present, an embedded broker is started and
-configured automatically (unless the mode property has been explicitly set). The supported
-modes are: `embedded` (to make explicit that an embedded broker is required and should
-lead to an error if the broker is not available in the classpath), and `native` to connect
-to a broker using the `netty` transport protocol. When the latter is configured, Spring
-Boot configures a `ConnectionFactory` connecting to a broker running on the local machine
-with the default settings.
-
-NOTE: If you are using `spring-boot-starter-hornetq` the necessary dependencies to
-connect to an existing HornetQ instance are provided, as well as the Spring infrastructure
-to integrate with JMS. Adding `org.hornetq:hornetq-jms-server` to your application allows
-you to use the embedded mode.
-
-HornetQ configuration is controlled by external configuration properties in
-`+spring.hornetq.*+`. For example, you might declare the following section in
-`application.properties`:
-
-[source,properties,indent=0]
-----
-	spring.hornetq.mode=native
-	spring.hornetq.host=192.168.1.210
-	spring.hornetq.port=9876
-	spring.hornetq.user=admin
-	spring.hornetq.password=secret
-----
-
-When embedding the broker, you can choose if you want to enable persistence, and the list
-of destinations that should be made available. These can be specified as a comma-separated
-list to create them with the default options; or you can define bean(s) of type
-`org.hornetq.jms.server.config.JMSQueueConfiguration` or
-`org.hornetq.jms.server.config.TopicConfiguration`, for advanced queue and topic
-configurations respectively.
-
-See
-{sc-spring-boot-autoconfigure}/jms/hornetq/HornetQProperties.{sc-ext}[`HornetQProperties`]
-for more of the supported options.
-
-No JNDI lookup is involved at all and destinations are resolved against their names,
-either using the '`name`' attribute in the HornetQ configuration or the names provided
 through configuration.
 
 
@@ -4466,11 +4460,17 @@ configure a `RestTemplate`. For example, to add BASIC auth support you can use
 
 [[boot-features-restclient-customization]]
 === RestTemplate customization
-When a `RestTemplateBuilder` builds a `RestTemplate` it can be further customized using
-a `RestTemplateCustomizer`. Any `RestTemplateCustomizer` beans will be automatically
-added to the auto-configured `RestTemplateBuilder`. Furthermore, a new
-`RestTemplateBuilder` with additional customizers can be created by calling
-`additionalCustomizers(RestTemplateCustomizer...)`.
+There are three main approaches to `RestTemplate` customization, depending on how broadly
+you want the customizations to apply.
+
+To make the scope of any customizations as narrow as possible, inject the auto-configured
+`RestTemplateBuilder` and then call its methods as required. Each method call returns a
+new `RestTemplateBuilder` instance so the customizations will only affect this use of
+the builder.
+
+To make an application-wide, additive customization a `RestTemplateCustomizer` bean can be
+used. All such beans are automatically registered with the auto-configured
+`RestTemplateBuilder` and will be applied to any templates that are built with it.
 
 Here's an example of a customizer that configures the use of a proxy for all hosts except
 `192.168.0.5`:
@@ -4479,6 +4479,10 @@ Here's an example of a customizer that configures the use of a proxy for all hos
 ----
 include::{code-examples}/web/client/RestTemplateProxyCustomizationExample.java[tag=customizer]
 ----
+
+Lastly, the most extreme (and rarely used) option is to create your own
+`RestTemplateBuilder` bean. This will switch off the auto-configuration of a
+`RestTemplateBuilder` and will prevent any `RestTemplateCustomizer` beans from being used.
 
 
 
@@ -4819,7 +4823,8 @@ how your tests will run:
 * `MOCK` -- Loads a `WebApplicationContext` and provides a mock servlet environment.
   Embedded servlet containers are not started when using this annotation. If servlet
   APIs are not on your classpath this mode will transparently fallback to creating a
-  regular non-web `ApplicationContext`.
+  regular non-web `ApplicationContext`. Can be used in conjunction with
+  `@AutoConfigureMockMvc` for `MockMvc`-based testing of your application.
 * `RANDOM_PORT` -- Loads an `EmbeddedWebApplicationContext` and provides a real
   servlet environment. Embedded servlet containers are started and listening on a random
   port.
@@ -4875,8 +4880,8 @@ annotations that can be used on classes in `src/test/java` to indicate that they
 not be picked up by scanning.
 
 NOTE: `@TestComponent` and `@TestConfiguration` are only needed on top level classes. If
-you define `@Configuration` or `@Component` as inner-classes within a test, they will be
-automatically filtered.
+you define `@Configuration` or `@Component` as inner-classes within a test (any class
+that has `@Test` methods or `@RunWith`), they will be automatically filtered.
 
 NOTE: If you directly use `@ComponentScan` (i.e. not via `@SpringBootApplication`) you
 will need to register the `TypeExcludeFilter` with it. See
@@ -4898,28 +4903,7 @@ For convenience, tests that need to make REST calls to the started server can ad
 
 [source,java,indent=0]
 ----
-	import org.junit.*;
-	import org.junit.runner.*;
-	import org.springframework.boot.test.context.web.*;
-	import org.springframework.boot.test.web.client.*;
-	import org.springframework.test.context.junit4.*;
-
-	import static org.assertj.core.api.Assertions.*
-
-	@RunWith(SpringRunner.class)
-	@SpringBootTest(webEnvironment=WebEnvironment.RANDOM_PORT)
-	public class MyWebIntegrationTests {
-
-		@Autowired
-		private TestRestTemplate restTemplate;
-
-		@Test
-		public void exampleTest() {
-			String body = this.restTemplate.getForObject("/", String.class);
-			assertThat(body).isEqualTo("Hello World");
-		}
-
-	}
+include::{code-examples}/test/web/RandomPortExampleTests.java[tag=test-random-port]
 ----
 
 
@@ -5009,7 +4993,7 @@ configure elements of the auto-configuration you can use the `@AutoConfigureJson
 annotation.
 
 Spring Boot includes AssertJ based helpers that work with the JSONassert and JsonPath
-libraries to check that JSON is as expected. The `JacksonHelper`, `GsonHelper` and
+libraries to check that JSON is as expected. The `JacksonTester`, `GsonTester` and
 `BasicJsonTester` classes can be used for Jackson, Gson and Strings respectively. Any
 helper fields on the test class can be `@Autowired` when using `@JsonTest`.
 
@@ -5194,7 +5178,8 @@ Data JPA tests may also inject a
 {sc-spring-boot-test-autoconfigure}/orm/jpa/TestEntityManager.{sc-ext}[`TestEntityManager`]
 bean which provides an alternative to the standard JPA `EntityManager` specifically
 designed for tests. If you want to use `TestEntityManager` outside of `@DataJpaTests` you
-can also use the `@AutoConfigureTestEntityManager` annotation.
+can also use the `@AutoConfigureTestEntityManager` annotation. A `JdbcTemplate` is also
+available if you need that.
 
 [source,java,indent=0]
 ----
@@ -5365,11 +5350,27 @@ automatically generate the default snippets:
 ==== Using Spock to test Spring Boot applications
 If you wish to use Spock to test a Spring Boot application you should add a dependency
 on Spock's `spock-spring` module to your application's build. `spock-spring` integrates
-Spring's test framework into Spock.
+Spring's test framework into Spock. Exactly how you can use Spock to test a Spring Boot
+application depends on the version of Spock that you are using.
 
-NOTE: The annotations <<boot-features-testing-spring-boot-applications,described above>>
-can be used with Spock, i.e. you can annotate your `Specification` with
+NOTE: Spring Boot provides dependency management for Spock 1.0. If you wish to use Spock
+1.1 you should <<howto.adoc#howto-customize-dependency-versions,override the
+`spock.version` property>> in your `build.gradle` or `pom.xml` file.
+
+When using Spock 1.1, the annotations <<boot-features-testing-spring-boot-applications,
+described above>> can only be used and you can annotate your `Specification` with
 `@SpringBootTest` to suit the needs of your tests.
+
+When using Spock 1.0, `@SpringBootTest` will not work for a web project. You need to use
+`@SpringApplicationConfiguration` and `@WebIntegrationTest(randomPort = true)`. Being
+unable to use `@SpringBootTest` means that you also lose the auto-configured
+`TestRestTemplate` bean. You can create an equivalent bean yourself using the following
+configuration:
+
+[source,java,indent=0]
+----
+include::{code-examples}/test/spock/SpockTestRestTemplateExample.java[tag=test-rest-template-configuration]
+----
 
 
 
@@ -5468,9 +5469,10 @@ public class MyTest {
 }
 ----
 
-If you are using the `@SpringBootTest` annotation, you can just inject a fully configured
-`TestRestTemplate` and start using it. If necessary, additional customizations can be
-applied via the `RestTemplateBuilder` bean:
+If you are using the `@SpringBootTest` annotation with `WebEnvironment.RANDOM_PORT` or
+`WebEnvironment.DEFINED_PORT`, you can just inject a fully configured `TestRestTemplate`
+and start using it. If necessary, additional customizations can be applied via the
+`RestTemplateBuilder` bean:
 
 [source,java,indent=0]
 ----
@@ -5487,7 +5489,7 @@ public class MyTest {
 		assertThat(headers.getLocation().toString(), containsString("myotherhost"));
 	}
 
-	@TestConfig
+	@TestConfiguration
 	static class Config {
 
 		@Bean

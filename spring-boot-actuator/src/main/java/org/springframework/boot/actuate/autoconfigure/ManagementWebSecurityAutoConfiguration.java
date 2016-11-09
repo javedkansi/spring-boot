@@ -33,6 +33,7 @@ import org.springframework.boot.actuate.endpoint.mvc.MvcEndpoint;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionMessage;
 import org.springframework.boot.autoconfigure.condition.ConditionOutcome;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -63,6 +64,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfiguration;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.annotation.web.configurers.ExpressionUrlAuthorizationConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.www.BasicAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
@@ -223,10 +225,13 @@ public class ManagementWebSecurityAutoConfiguration {
 					.getProperty("management.security.enabled", "true");
 			String basicEnabled = context.getEnvironment()
 					.getProperty("security.basic.enabled", "true");
-			return new ConditionOutcome(
-					"true".equalsIgnoreCase(managementEnabled)
-							&& !"true".equalsIgnoreCase(basicEnabled),
-					"Management security enabled and basic disabled");
+			ConditionMessage.Builder message = ConditionMessage
+					.forCondition("WebSecurityEnabled");
+			if ("true".equalsIgnoreCase(managementEnabled)
+					&& !"true".equalsIgnoreCase(basicEnabled)) {
+				return ConditionOutcome.match(message.because("security enabled"));
+			}
+			return ConditionOutcome.noMatch(message.because("security disabled"));
 		}
 
 	}
@@ -270,11 +275,20 @@ public class ManagementWebSecurityAutoConfiguration {
 				http.httpBasic().authenticationEntryPoint(entryPoint);
 				// No cookies for management endpoints by default
 				http.csrf().disable();
-				http.sessionManagement().sessionCreationPolicy(
-						this.management.getSecurity().getSessions());
+				http.sessionManagement()
+						.sessionCreationPolicy(asSpringSecuritySessionCreationPolicy(
+								this.management.getSecurity().getSessions()));
 				SpringBootWebSecurityConfiguration.configureHeaders(http.headers(),
 						this.security.getHeaders());
 			}
+		}
+
+		private SessionCreationPolicy asSpringSecuritySessionCreationPolicy(
+				Enum<?> value) {
+			if (value == null) {
+				return SessionCreationPolicy.STATELESS;
+			}
+			return SessionCreationPolicy.valueOf(value.name());
 		}
 
 		private RequestMatcher getRequestMatcher() {

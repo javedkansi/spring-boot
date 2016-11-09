@@ -200,23 +200,29 @@ public final class RelaxedNames implements Iterable<String> {
 
 		};
 
+		private static final char[] SUFFIXES = new char[] { '_', '-', '.' };
+
 		public abstract String apply(String value);
 
 		private static String separatedToCamelCase(String value,
 				boolean caseInsensitive) {
+			if (value.length() == 0) {
+				return value;
+			}
 			StringBuilder builder = new StringBuilder();
 			for (String field : SEPARATED_TO_CAMEL_CASE_PATTERN.split(value)) {
 				field = (caseInsensitive ? field.toLowerCase() : field);
 				builder.append(
 						builder.length() == 0 ? field : StringUtils.capitalize(field));
 			}
-			for (String suffix : new String[] { "_", "-", "." }) {
-				if (value.endsWith(suffix)) {
+			char lastChar = value.charAt(value.length() - 1);
+			for (char suffix : SUFFIXES) {
+				if (lastChar == suffix) {
 					builder.append(suffix);
+					break;
 				}
 			}
 			return builder.toString();
-
 		}
 	}
 
@@ -226,7 +232,13 @@ public final class RelaxedNames implements Iterable<String> {
 	 * @return the relaxed names
 	 */
 	public static RelaxedNames forCamelCase(String name) {
-		return new RelaxedNames(Manipulation.CAMELCASE_TO_HYPHEN.apply(name));
+		StringBuffer result = new StringBuffer();
+		for (char c : name.toCharArray()) {
+			result.append(Character.isUpperCase(c) && result.length() > 0
+					&& result.charAt(result.length() - 1) != '-'
+							? "-" + Character.toLowerCase(c) : c);
+		}
+		return new RelaxedNames(result.toString());
 	}
 
 }

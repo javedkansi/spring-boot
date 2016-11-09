@@ -18,6 +18,7 @@ package org.springframework.boot.logging;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Handler;
@@ -37,6 +38,7 @@ import org.slf4j.bridge.SLF4JBridgeHandler;
 
 import org.springframework.boot.ApplicationPid;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.event.ApplicationFailedEvent;
 import org.springframework.boot.context.event.ApplicationStartedEvent;
 import org.springframework.boot.logging.java.JavaLoggingSystem;
 import org.springframework.boot.testutil.InternalOutputCapture;
@@ -56,6 +58,7 @@ import static org.hamcrest.Matchers.not;
  * @author Phillip Webb
  * @author Andy Wilkinson
  * @author Stephane Nicoll
+ * @author Ben Hale
  */
 public class LoggingApplicationListenerTests {
 
@@ -464,6 +467,21 @@ public class LoggingApplicationListenerTests {
 				.isEqualTo("target/" + new ApplicationPid().toString() + ".log");
 	}
 
+	@Test
+	public void applicationFailedEventCleansUpLoggingSystem() {
+		System.setProperty(LoggingSystem.SYSTEM_PROPERTY,
+				TestCleanupLoggingSystem.class.getName());
+		this.initializer.onApplicationEvent(
+				new ApplicationStartedEvent(this.springApplication, new String[0]));
+		TestCleanupLoggingSystem loggingSystem = (TestCleanupLoggingSystem) ReflectionTestUtils
+				.getField(this.initializer, "loggingSystem");
+		assertThat(loggingSystem.cleanedUp).isFalse();
+		this.initializer
+				.onApplicationEvent(new ApplicationFailedEvent(this.springApplication,
+						new String[0], new GenericApplicationContext(), new Exception()));
+		assertThat(loggingSystem.cleanedUp).isTrue();
+	}
+
 	private boolean bridgeHandlerInstalled() {
 		Logger rootLogger = LogManager.getLogManager().getLogger("");
 		Handler[] handlers = rootLogger.getHandlers();
@@ -502,7 +520,16 @@ public class LoggingApplicationListenerTests {
 
 		@Override
 		public void setLogLevel(String loggerName, LogLevel level) {
+		}
 
+		@Override
+		public List<LoggerConfiguration> getLoggerConfigurations() {
+			return null;
+		}
+
+		@Override
+		public LoggerConfiguration getLoggerConfiguration(String loggerName) {
+			return null;
 		}
 
 		@Override
@@ -536,17 +563,24 @@ public class LoggingApplicationListenerTests {
 		private boolean cleanedUp = false;
 
 		public TestCleanupLoggingSystem(ClassLoader classLoader) {
-
 		}
 
 		@Override
 		public void beforeInitialize() {
-
 		}
 
 		@Override
 		public void setLogLevel(String loggerName, LogLevel level) {
+		}
 
+		@Override
+		public List<LoggerConfiguration> getLoggerConfigurations() {
+			return null;
+		}
+
+		@Override
+		public LoggerConfiguration getLoggerConfiguration(String loggerName) {
+			return null;
 		}
 
 		@Override

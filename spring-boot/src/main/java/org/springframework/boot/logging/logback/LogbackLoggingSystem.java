@@ -19,10 +19,9 @@ package org.springframework.boot.logging.logback;
 import java.net.URL;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
@@ -40,6 +39,8 @@ import org.slf4j.impl.StaticLoggerBinder;
 
 import org.springframework.boot.logging.LogFile;
 import org.springframework.boot.logging.LogLevel;
+import org.springframework.boot.logging.LoggerConfiguration;
+import org.springframework.boot.logging.LoggerConfigurationComparator;
 import org.springframework.boot.logging.LoggingInitializationContext;
 import org.springframework.boot.logging.LoggingSystem;
 import org.springframework.boot.logging.Slf4JLoggingSystem;
@@ -53,23 +54,25 @@ import org.springframework.util.StringUtils;
  * @author Phillip Webb
  * @author Dave Syer
  * @author Andy Wilkinson
+ * @author Ben Hale
  */
 public class LogbackLoggingSystem extends Slf4JLoggingSystem {
 
+	private static final LoggerConfigurationComparator COMPARATOR = new LoggerConfigurationComparator(
+			Logger.ROOT_LOGGER_NAME);
+
 	private static final String CONFIGURATION_FILE_PROPERTY = "logback.configurationFile";
 
-	private static final Map<LogLevel, Level> LEVELS;
+	private static final LogLevels<Level> LEVELS = new LogLevels<Level>();
 
 	static {
-		Map<LogLevel, Level> levels = new HashMap<LogLevel, Level>();
-		levels.put(LogLevel.TRACE, Level.TRACE);
-		levels.put(LogLevel.DEBUG, Level.DEBUG);
-		levels.put(LogLevel.INFO, Level.INFO);
-		levels.put(LogLevel.WARN, Level.WARN);
-		levels.put(LogLevel.ERROR, Level.ERROR);
-		levels.put(LogLevel.FATAL, Level.ERROR);
-		levels.put(LogLevel.OFF, Level.OFF);
-		LEVELS = Collections.unmodifiableMap(levels);
+		LEVELS.map(LogLevel.TRACE, Level.TRACE);
+		LEVELS.map(LogLevel.DEBUG, Level.DEBUG);
+		LEVELS.map(LogLevel.INFO, Level.INFO);
+		LEVELS.map(LogLevel.WARN, Level.WARN);
+		LEVELS.map(LogLevel.ERROR, Level.ERROR);
+		LEVELS.map(LogLevel.FATAL, Level.ERROR);
+		LEVELS.map(LogLevel.OFF, Level.OFF);
 	}
 
 	private static final TurboFilter FILTER = new TurboFilter() {
@@ -94,16 +97,25 @@ public class LogbackLoggingSystem extends Slf4JLoggingSystem {
 
 	@Override
 	public void beforeInitialize() {
+		LoggerContext loggerContext = getLoggerContext();
+		if (isAlreadyInitialized(loggerContext)) {
+			return;
+		}
 		super.beforeInitialize();
-		getLogger(null).getLoggerContext().getTurboFilterList().add(FILTER);
+		loggerContext.getTurboFilterList().add(FILTER);
 		configureJBossLoggingToUseSlf4j();
 	}
 
 	@Override
 	public void initialize(LoggingInitializationContext initializationContext,
 			String configLocation, LogFile logFile) {
-		getLogger(null).getLoggerContext().getTurboFilterList().remove(FILTER);
+		LoggerContext loggerContext = getLoggerContext();
+		if (isAlreadyInitialized(loggerContext)) {
+			return;
+		}
+		loggerContext.getTurboFilterList().remove(FILTER);
 		super.initialize(initializationContext, configLocation, logFile);
+		markAsInitialized(loggerContext);
 		if (StringUtils.hasText(System.getProperty(CONFIGURATION_FILE_PROPERTY))) {
 			getLogger(LogbackLoggingSystem.class.getName()).warn(
 					"Ignoring '" + CONFIGURATION_FILE_PROPERTY + "' system property. "
@@ -184,6 +196,7 @@ public class LogbackLoggingSystem extends Slf4JLoggingSystem {
 
 	@Override
 	public void cleanUp() {
+		markAsUninitialized(getLoggerContext());
 		super.cleanUp();
 		getLoggerContext().getStatusManager().clear();
 	}
@@ -200,8 +213,37 @@ public class LogbackLoggingSystem extends Slf4JLoggingSystem {
 	}
 
 	@Override
+	public List<LoggerConfiguration> getLoggerConfigurations() {
+		List<LoggerConfiguration> result = new ArrayList<LoggerConfiguration>();
+		for (ch.qos.logback.classic.Logger logger : getLoggerContext().getLoggerList()) {
+			result.add(getLoggerConfiguration(logger));
+		}
+		Collections.sort(result, COMPARATOR);
+		return result;
+	}
+
+	@Override
+	public LoggerConfiguration getLoggerConfiguration(String loggerName) {
+		return getLoggerConfiguration(getLogger(loggerName));
+	}
+
+	private LoggerConfiguration getLoggerConfiguration(
+			ch.qos.logback.classic.Logger logger) {
+		if (logger == null) {
+			return null;
+		}
+		LogLevel level = LEVELS.convertNativeToSystem(logger.getLevel());
+		LogLevel effectiveLevel = LEVELS
+				.convertNativeToSystem(logger.getEffectiveLevel());
+		return new LoggerConfiguration(logger.getName(), level, effectiveLevel);
+	}
+
+	@Override
 	public void setLogLevel(String loggerName, LogLevel level) {
-		getLogger(loggerName).setLevel(LEVELS.get(level));
+		ch.qos.logback.classic.Logger logger = getLogger(loggerName);
+		if (logger != null) {
+			logger.setLevel(LEVELS.convertSystemToNative(level));
+		}
 	}
 
 	@Override
@@ -211,8 +253,8 @@ public class LogbackLoggingSystem extends Slf4JLoggingSystem {
 
 	private ch.qos.logback.classic.Logger getLogger(String name) {
 		LoggerContext factory = getLoggerContext();
-		return factory
-				.getLogger(StringUtils.isEmpty(name) ? Logger.ROOT_LOGGER_NAME : name);
+		name = (StringUtils.isEmpty(name) ? Logger.ROOT_LOGGER_NAME : name);
+		return factory.getLogger(name);
 
 	}
 
@@ -241,6 +283,18 @@ public class LogbackLoggingSystem extends Slf4JLoggingSystem {
 			// Unable to determine location
 		}
 		return "unknown location";
+	}
+
+	private boolean isAlreadyInitialized(LoggerContext loggerContext) {
+		return loggerContext.getObject(LoggingSystem.class.getName()) != null;
+	}
+
+	private void markAsInitialized(LoggerContext loggerContext) {
+		loggerContext.putObject(LoggingSystem.class.getName(), new Object());
+	}
+
+	private void markAsUninitialized(LoggerContext loggerContext) {
+		loggerContext.removeObject(LoggingSystem.class.getName());
 	}
 
 	private final class ShutdownHandler implements Runnable {

@@ -200,8 +200,6 @@ public class SpringApplication {
 
 	private Banner banner;
 
-	private boolean printedCustomBannerViaDeprecatedMethod;
-
 	private ResourceLoader resourceLoader;
 
 	private BeanNameGenerator beanNameGenerator;
@@ -298,6 +296,7 @@ public class SpringApplication {
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
 		ConfigurableApplicationContext context = null;
+		FailureAnalyzers analyzers = null;
 		configureHeadlessProperty();
 		SpringApplicationRunListeners listeners = getRunListeners(args);
 		listeners.started();
@@ -308,6 +307,7 @@ public class SpringApplication {
 					applicationArguments);
 			Banner printedBanner = printBanner(environment);
 			context = createApplicationContext();
+			analyzers = new FailureAnalyzers(context);
 			prepareContext(context, environment, listeners, applicationArguments,
 					printedBanner);
 			refreshContext(context);
@@ -321,7 +321,7 @@ public class SpringApplication {
 			return context;
 		}
 		catch (Throwable ex) {
-			handleRunFailure(context, listeners, ex);
+			handleRunFailure(context, listeners, analyzers, ex);
 			throw new IllegalStateException(ex);
 		}
 	}
@@ -538,9 +538,6 @@ public class SpringApplication {
 		if (this.bannerMode == Banner.Mode.OFF) {
 			return null;
 		}
-		if (printBannerViaDeprecatedMethod(environment)) {
-			return null;
-		}
 		ResourceLoader resourceLoader = this.resourceLoader != null ? this.resourceLoader
 				: new DefaultResourceLoader(getClassLoader());
 		SpringApplicationBannerPrinter bannerPrinter = new SpringApplicationBannerPrinter(
@@ -549,26 +546,6 @@ public class SpringApplication {
 			return bannerPrinter.print(environment, this.mainApplicationClass, logger);
 		}
 		return bannerPrinter.print(environment, this.mainApplicationClass, System.out);
-	}
-
-	private boolean printBannerViaDeprecatedMethod(Environment environment) {
-		this.printedCustomBannerViaDeprecatedMethod = true;
-		printBanner(environment);
-		return this.printedCustomBannerViaDeprecatedMethod;
-	}
-
-	/**
-	 * Print a custom banner message to the console, optionally extracting its location or
-	 * content from the Environment (banner.location and banner.charset). The defaults are
-	 * banner.location=classpath:banner.txt, banner.charset=UTF-8. If the banner file does
-	 * not exist or cannot be printed, a simple default is created.
-	 * @param environment the environment
-	 * @see #setBannerMode
-	 * @deprecated as of 1.4 in favor of @{@link #setBanner(Banner)}
-	 */
-	@Deprecated
-	protected void printBanner(Environment environment) {
-		this.printedCustomBannerViaDeprecatedMethod = false;
 	}
 
 	/**
@@ -592,7 +569,7 @@ public class SpringApplication {
 						ex);
 			}
 		}
-		return (ConfigurableApplicationContext) BeanUtils.instantiate(contextClass);
+		return (ConfigurableApplicationContext) BeanUtils.instantiateClass(contextClass);
 	}
 
 	/**
@@ -803,14 +780,15 @@ public class SpringApplication {
 	}
 
 	private void handleRunFailure(ConfigurableApplicationContext context,
-			SpringApplicationRunListeners listeners, Throwable exception) {
+			SpringApplicationRunListeners listeners, FailureAnalyzers analyzers,
+			Throwable exception) {
 		try {
 			try {
 				handleExitCode(context, exception);
 				listeners.finished(context, exception);
 			}
 			finally {
-				reportFailure(exception, context);
+				reportFailure(analyzers, exception);
 				if (context != null) {
 					context.close();
 				}
@@ -822,11 +800,9 @@ public class SpringApplication {
 		ReflectionUtils.rethrowRuntimeException(exception);
 	}
 
-	private void reportFailure(Throwable failure,
-			ConfigurableApplicationContext context) {
+	private void reportFailure(FailureAnalyzers analyzers, Throwable failure) {
 		try {
-			if (FailureAnalyzers.analyzeAndReport(failure, getClass().getClassLoader(),
-					context)) {
+			if (analyzers != null && analyzers.analyzeAndReport(failure)) {
 				registerLoggedException(failure);
 				return;
 			}

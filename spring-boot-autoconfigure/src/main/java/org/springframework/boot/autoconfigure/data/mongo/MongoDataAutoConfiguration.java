@@ -17,6 +17,7 @@
 package org.springframework.boot.autoconfigure.data.mongo;
 
 import java.net.UnknownHostException;
+import java.util.Collections;
 
 import com.mongodb.DB;
 import com.mongodb.Mongo;
@@ -24,7 +25,6 @@ import com.mongodb.MongoClient;
 
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.BeanFactory;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -103,32 +103,28 @@ public class MongoDataAutoConfiguration {
 	@Bean
 	@ConditionalOnMissingBean(MongoConverter.class)
 	public MappingMongoConverter mappingMongoConverter(MongoDbFactory factory,
-			MongoMappingContext context, BeanFactory beanFactory) {
+			MongoMappingContext context, BeanFactory beanFactory,
+			CustomConversions conversions) {
 		DbRefResolver dbRefResolver = new DefaultDbRefResolver(factory);
 		MappingMongoConverter mappingConverter = new MappingMongoConverter(dbRefResolver,
 				context);
-		try {
-			mappingConverter
-					.setCustomConversions(beanFactory.getBean(CustomConversions.class));
-		}
-		catch (NoSuchBeanDefinitionException ex) {
-			// Ignore
-		}
+		mappingConverter.setCustomConversions(conversions);
 		return mappingConverter;
 	}
 
 	@Bean
 	@ConditionalOnMissingBean
-	public MongoMappingContext mongoMappingContext(BeanFactory beanFactory)
-			throws ClassNotFoundException {
+	public MongoMappingContext mongoMappingContext(BeanFactory beanFactory,
+			CustomConversions conversions) throws ClassNotFoundException {
 		MongoMappingContext context = new MongoMappingContext();
 		context.setInitialEntitySet(new EntityScanner(this.applicationContext)
 				.scan(Document.class, Persistent.class));
 		Class<?> strategyClass = this.properties.getFieldNamingStrategy();
 		if (strategyClass != null) {
 			context.setFieldNamingStrategy(
-					(FieldNamingStrategy) BeanUtils.instantiate(strategyClass));
+					(FieldNamingStrategy) BeanUtils.instantiateClass(strategyClass));
 		}
+		context.setSimpleTypeHolder(conversions.getSimpleTypeHolder());
 		return context;
 	}
 
@@ -139,6 +135,12 @@ public class MongoDataAutoConfiguration {
 		return new GridFsTemplate(
 				new GridFsMongoDbFactory(mongoDbFactory, this.properties),
 				mongoTemplate.getConverter());
+	}
+
+	@Bean
+	@ConditionalOnMissingBean
+	public CustomConversions customConversions() {
+		return new CustomConversions(Collections.emptyList());
 	}
 
 	/**

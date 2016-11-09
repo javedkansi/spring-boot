@@ -56,7 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author Andy Wilkinson
  */
 @RunWith(SpringRunner.class)
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "spring.jackson.serialization-inclusion:non-null")
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "spring.jackson.default-property-inclusion:non-null")
 @DirtiesContext
 public class JerseyAutoConfigurationObjectMapperProviderTests {
 
@@ -68,8 +68,7 @@ public class JerseyAutoConfigurationObjectMapperProviderTests {
 		ResponseEntity<String> response = this.restTemplate.getForEntity("/rest/message",
 				String.class);
 		assertThat(HttpStatus.OK).isEqualTo(response.getStatusCode());
-		assertThat(response.getBody())
-				.isEqualTo(String.format("{\"subject\":\"Jersey\"}"));
+		assertThat(response.getBody()).isEqualTo("{\"subject\":\"Jersey\"}");
 	}
 
 	@MinimalWebConfiguration

@@ -29,6 +29,7 @@ import org.thymeleaf.extras.java8time.dialect.Java8TimeDialect;
 import org.thymeleaf.extras.springsecurity4.dialect.SpringSecurityDialect;
 import org.thymeleaf.spring4.SpringTemplateEngine;
 import org.thymeleaf.spring4.resourceresolver.SpringResourceResourceResolver;
+import org.thymeleaf.spring4.templateresolver.SpringResourceTemplateResolver;
 import org.thymeleaf.spring4.view.ThymeleafViewResolver;
 import org.thymeleaf.templateresolver.ITemplateResolver;
 
@@ -36,7 +37,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnJava;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -130,6 +130,17 @@ public class ThymeleafAutoConfiguration {
 			DefaultTemplateResolverConfiguration(ThymeleafProperties properties,
 					ApplicationContext applicationContext) {
 				super(properties, applicationContext);
+			}
+
+			@Bean
+			@Override
+			public SpringResourceTemplateResolver defaultTemplateResolver() {
+				SpringResourceTemplateResolver resolver = super.defaultTemplateResolver();
+				Method setCheckExistence = ReflectionUtils.findMethod(resolver.getClass(),
+						"setCheckExistence", boolean.class);
+				ReflectionUtils.invokeMethod(setCheckExistence, resolver,
+						getProperties().isCheckTemplate());
+				return resolver;
 			}
 
 		}
@@ -233,7 +244,6 @@ public class ThymeleafAutoConfiguration {
 	}
 
 	@Configuration
-	@ConditionalOnJava(ConditionalOnJava.JavaVersion.EIGHT)
 	@ConditionalOnClass(Java8TimeDialect.class)
 	protected static class ThymeleafJava8TimeDialect {
 

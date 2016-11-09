@@ -100,37 +100,44 @@ public class TestDatabaseAutoConfiguration {
 		private void process(BeanDefinitionRegistry registry,
 				ConfigurableListableBeanFactory beanFactory) {
 			BeanDefinitionHolder holder = getDataSourceBeanDefinition(beanFactory);
-			logger.info("Replacing '" + holder.getBeanName()
-					+ "' DataSource bean with embedded version");
-			registry.registerBeanDefinition(holder.getBeanName(),
-					createEmbeddedBeanDefinition());
+			if (holder != null) {
+				String beanName = holder.getBeanName();
+				boolean primary = holder.getBeanDefinition().isPrimary();
+				logger.info("Replacing '" + beanName + "' DataSource bean with "
+						+ (primary ? "primary " : "") + "embedded version");
+				registry.registerBeanDefinition(beanName,
+						createEmbeddedBeanDefinition(primary));
+			}
 		}
 
-		private BeanDefinition createEmbeddedBeanDefinition() {
-			return new RootBeanDefinition(EmbeddedDataSourceFactoryBean.class);
+		private BeanDefinition createEmbeddedBeanDefinition(boolean primary) {
+			BeanDefinition beanDefinition = new RootBeanDefinition(
+					EmbeddedDataSourceFactoryBean.class);
+			beanDefinition.setPrimary(primary);
+			return beanDefinition;
 		}
 
 		private BeanDefinitionHolder getDataSourceBeanDefinition(
 				ConfigurableListableBeanFactory beanFactory) {
 			String[] beanNames = beanFactory.getBeanNamesForType(DataSource.class);
-			if (!ObjectUtils.isEmpty(beanNames)) {
-				if (beanNames.length == 1) {
-					String beanName = beanNames[0];
-					BeanDefinition beanDefinition = beanFactory
-							.getBeanDefinition(beanName);
+			if (ObjectUtils.isEmpty(beanNames)) {
+				logger.warn("No DataSource beans found, "
+						+ "embedded version will not be used");
+				return null;
+			}
+			if (beanNames.length == 1) {
+				String beanName = beanNames[0];
+				BeanDefinition beanDefinition = beanFactory.getBeanDefinition(beanName);
+				return new BeanDefinitionHolder(beanDefinition, beanName);
+			}
+			for (String beanName : beanNames) {
+				BeanDefinition beanDefinition = beanFactory.getBeanDefinition(beanName);
+				if (beanDefinition.isPrimary()) {
 					return new BeanDefinitionHolder(beanDefinition, beanName);
 				}
-				for (String beanName : beanNames) {
-					BeanDefinition beanDefinition = beanFactory
-							.getBeanDefinition(beanName);
-					if (beanDefinition.isPrimary()) {
-						return new BeanDefinitionHolder(beanDefinition, beanName);
-					}
-					logger.warn("No primary DataSource found, "
-							+ "embedded version will not be used");
-				}
-
 			}
+			logger.warn("No primary DataSource found, "
+					+ "embedded version will not be used");
 			return null;
 		}
 
@@ -185,6 +192,10 @@ public class TestDatabaseAutoConfiguration {
 			if (EmbeddedDatabaseConnection.NONE.equals(connection)) {
 				connection = EmbeddedDatabaseConnection.get(getClass().getClassLoader());
 			}
+			Assert.state(connection != EmbeddedDatabaseConnection.NONE,
+					"Cannot determine embedded database for tests. If you want "
+							+ "an embedded database please put a supported one "
+							+ "on the classpath.");
 			return new EmbeddedDatabaseBuilder().setType(connection.getType()).build();
 		}
 

@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,7 +47,6 @@ import org.apache.catalina.Valve;
 import org.apache.catalina.Wrapper;
 import org.apache.catalina.connector.Connector;
 import org.apache.catalina.loader.WebappLoader;
-import org.apache.catalina.session.ManagerBase;
 import org.apache.catalina.session.StandardManager;
 import org.apache.catalina.startup.Tomcat;
 import org.apache.catalina.startup.Tomcat.FixContextListener;
@@ -126,9 +126,12 @@ public class TomcatEmbeddedServletContainerFactory
 
 	private String protocol = DEFAULT_PROTOCOL;
 
-	private String tldSkip;
+	private Set<String> tldSkipPatterns = new LinkedHashSet<String>(
+			TldSkipPatterns.DEFAULT);
 
 	private Charset uriEncoding = DEFAULT_CHARSET;
+
+	private int backgroundProcessorDelay;
 
 	/**
 	 * Create a new {@link TomcatEmbeddedServletContainerFactory} instance.
@@ -177,7 +180,7 @@ public class TomcatEmbeddedServletContainerFactory
 	}
 
 	private void configureEngine(Engine engine) {
-		engine.setBackgroundProcessorDelay(-1);
+		engine.setBackgroundProcessorDelay(this.backgroundProcessorDelay);
 		for (Valve valve : this.engineValves) {
 			engine.getPipeline().addValve(valve);
 		}
@@ -203,7 +206,7 @@ public class TomcatEmbeddedServletContainerFactory
 		catch (NoSuchMethodError ex) {
 			// Tomcat is < 8.0.30. Continue
 		}
-		SkipPatternJarScanner.apply(context, this.tldSkip);
+		SkipPatternJarScanner.apply(context, this.tldSkipPatterns);
 		WebappLoader loader = new WebappLoader(context.getParentClassLoader());
 		loader.setLoaderClass(TomcatEmbeddedWebappClassLoader.class.getName());
 		loader.setDelegate(true);
@@ -253,7 +256,7 @@ public class TomcatEmbeddedServletContainerFactory
 		// Otherwise the default location of a Spring DispatcherServlet cannot be set
 		defaultServlet.setOverridable(true);
 		context.addChild(defaultServlet);
-		context.addServletMapping("/", "default");
+		addServletMapping(context, "/", "default");
 	}
 
 	private void addJspServlet(Context context) {
@@ -267,8 +270,13 @@ public class TomcatEmbeddedServletContainerFactory
 		}
 		jspServlet.setLoadOnStartup(3);
 		context.addChild(jspServlet);
-		context.addServletMapping("*.jsp", "jsp");
-		context.addServletMapping("*.jspx", "jsp");
+		addServletMapping(context, "*.jsp", "jsp");
+		addServletMapping(context, "*.jspx", "jsp");
+	}
+
+	@SuppressWarnings("deprecation")
+	private void addServletMapping(Context context, String pattern, String name) {
+		context.addServletMapping(pattern, name);
 	}
 
 	private void addJasperInitializer(TomcatEmbeddedContext context) {
@@ -488,7 +496,6 @@ public class TomcatEmbeddedServletContainerFactory
 		else {
 			context.addLifecycleListener(new DisablePersistSessionListener());
 		}
-		context.addLifecycleListener(new LazySessionIdGeneratorListener());
 	}
 
 	private void configurePersistSession(Manager manager) {
@@ -547,10 +554,40 @@ public class TomcatEmbeddedServletContainerFactory
 	 * A comma-separated list of jars to ignore for TLD scanning. See Tomcat's
 	 * catalina.properties for typical values. Defaults to a list drawn from that source.
 	 * @param tldSkip the jars to skip when scanning for TLDs etc
+	 * @deprecated since 1.5.0 in favor of {@link #setTldSkipPatterns(Collection)}
 	 */
+	@Deprecated
 	public void setTldSkip(String tldSkip) {
 		Assert.notNull(tldSkip, "TldSkip must not be null");
-		this.tldSkip = tldSkip;
+		setTldSkipPatterns(StringUtils.commaDelimitedListToSet(tldSkip));
+	}
+
+	/**
+	 * Returns a mutable set of the patterns that match jars to ignore for TLD scanning.
+	 * @return the list of jars to ignore for TLD scanning
+	 */
+	public Set<String> getTldSkipPatterns() {
+		return this.tldSkipPatterns;
+	}
+
+	/**
+	 * Set the patterns that match jars to ignore for TLD scanning. See Tomcat's
+	 * catalina.properties for typical values. Defaults to a list drawn from that source.
+	 * @param patterns the jar patterns to skip when scanning for TLDs etc
+	 */
+	public void setTldSkipPatterns(Collection<String> patterns) {
+		Assert.notNull(patterns, "Patterns must not be null");
+		this.tldSkipPatterns = new LinkedHashSet<String>(patterns);
+	}
+
+	/**
+	 * Add patterns that match jars to ignore for TLD scanning. See Tomcat's
+	 * catalina.properties for typical values.
+	 * @param patterns the additional jar patterns to skip when scanning for TLDs etc
+	 */
+	public void addTldSkipPatterns(String... patterns) {
+		Assert.notNull(patterns, "Patterns must not be null");
+		this.tldSkipPatterns.addAll(Arrays.asList(patterns));
 	}
 
 	/**
@@ -599,17 +636,6 @@ public class TomcatEmbeddedServletContainerFactory
 	public void setContextValves(Collection<? extends Valve> contextValves) {
 		Assert.notNull(contextValves, "Valves must not be null");
 		this.contextValves = new ArrayList<Valve>(contextValves);
-	}
-
-	/**
-	 * Returns a mutable collection of the {@link Valve}s that will be applied to the
-	 * Tomcat {@link Context}.
-	 * @return the contextValves the valves that will be applied
-	 * @deprecated as of 1.4 in favor of {@link #getContextValves()}
-	 */
-	@Deprecated
-	public Collection<Valve> getValves() {
-		return getContextValves();
 	}
 
 	/**
@@ -768,6 +794,15 @@ public class TomcatEmbeddedServletContainerFactory
 	}
 
 	/**
+	 * Sets the background processor delay in seconds.
+	 * @param delay the delay in seconds
+	 * @since 1.4.1
+	 */
+	public void setBackgroundProcessorDelay(int delay) {
+		this.backgroundProcessorDelay = delay;
+	}
+
+	/**
 	 * {@link LifecycleListener} that stores an empty merged web.xml. This is critical for
 	 * Jasper on Tomcat 7 to prevent warnings about missing web.xml files and to enable
 	 * EL.
@@ -824,22 +859,6 @@ public class TomcatEmbeddedServletContainerFactory
 				Manager manager = context.getManager();
 				if (manager != null && manager instanceof StandardManager) {
 					((StandardManager) manager).setPathname(null);
-				}
-			}
-		}
-
-	}
-
-	private static class LazySessionIdGeneratorListener implements LifecycleListener {
-
-		@Override
-		public void lifecycleEvent(LifecycleEvent event) {
-			if (event.getType().equals(Lifecycle.START_EVENT)) {
-				Context context = (Context) event.getLifecycle();
-				Manager manager = context.getManager();
-				if (manager instanceof ManagerBase) {
-					((ManagerBase) manager)
-							.setSessionIdGenerator(new LazySessionIdGenerator());
 				}
 			}
 		}

@@ -243,7 +243,7 @@ public class RabbitProperties {
 	/**
 	 * If addresses have been set and the first address has a virtual host it is returned.
 	 * Otherwise returns the result of calling {@code getVirtualHost()}.
-	 * @return the password or {@code null}
+	 * @return the virtual host or {@code null}
 	 * @see #setAddresses(String)
 	 * @see #getVirtualHost()
 	 */
@@ -504,6 +504,11 @@ public class RabbitProperties {
 		private Boolean defaultRequeueRejected;
 
 		/**
+		 * How often idle container events should be published in milliseconds.
+		 */
+		private Long idleEventInterval;
+
+		/**
 		 * Optional properties for a retry interceptor.
 		 */
 		@NestedConfigurationProperty
@@ -563,6 +568,14 @@ public class RabbitProperties {
 
 		public void setDefaultRequeueRejected(Boolean defaultRequeueRejected) {
 			this.defaultRequeueRejected = defaultRequeueRejected;
+		}
+
+		public Long getIdleEventInterval() {
+			return this.idleEventInterval;
+		}
+
+		public void setIdleEventInterval(Long idleEventInterval) {
+			this.idleEventInterval = idleEventInterval;
 		}
 
 		public ListenerRetry getRetry() {
@@ -755,7 +768,7 @@ public class RabbitProperties {
 
 		private String parseVirtualHost(String input) {
 			int hostIndex = input.indexOf("/");
-			if (hostIndex >= 0 && hostIndex < input.length()) {
+			if (hostIndex >= 0) {
 				this.virtualHost = input.substring(hostIndex + 1);
 				if (this.virtualHost.length() == 0) {
 					this.virtualHost = "/";

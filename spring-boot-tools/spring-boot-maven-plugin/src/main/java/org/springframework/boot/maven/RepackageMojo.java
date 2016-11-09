@@ -137,7 +137,7 @@ public class RepackageMojo extends AbstractDependencyFilterMojo {
 	 * A list of the libraries that must be unpacked from fat jars in order to run.
 	 * Specify each library as a <code>&lt;dependency&gt;</code> with a
 	 * <code>&lt;groupId&gt;</code> and a <code>&lt;artifactId&gt;</code> and they will be
-	 * unpacked at runtime in <code>$TMPDIR/spring-boot-libs</code>.
+	 * unpacked at runtime.
 	 * @since 1.1
 	 */
 	@Parameter
@@ -167,11 +167,11 @@ public class RepackageMojo extends AbstractDependencyFilterMojo {
 	private Properties embeddedLaunchScriptProperties;
 
 	/**
-	 * Exclude Spring Boot devtools.
+	 * Exclude Spring Boot devtools from the repackaged archive.
 	 * @since 1.3
 	 */
-	@Parameter(defaultValue = "false")
-	private boolean excludeDevtools;
+	@Parameter(defaultValue = "true")
+	private boolean excludeDevtools = true;
 
 	/**
 	 * Include system scoped dependencies.

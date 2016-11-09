@@ -54,15 +54,14 @@ class TomcatErrorPage {
 	}
 
 	private Object createNativePage(ErrorPage errorPage) {
-		Object nativePage = null;
 		try {
 			if (ClassUtils.isPresent(ERROR_PAGE_CLASS, null)) {
-				nativePage = BeanUtils
-						.instantiate(ClassUtils.forName(ERROR_PAGE_CLASS, null));
+				return BeanUtils
+						.instantiateClass(ClassUtils.forName(ERROR_PAGE_CLASS, null));
 			}
-			else if (ClassUtils.isPresent(LEGACY_ERROR_PAGE_CLASS, null)) {
-				nativePage = BeanUtils
-						.instantiate(ClassUtils.forName(LEGACY_ERROR_PAGE_CLASS, null));
+			if (ClassUtils.isPresent(LEGACY_ERROR_PAGE_CLASS, null)) {
+				return BeanUtils.instantiateClass(
+						ClassUtils.forName(LEGACY_ERROR_PAGE_CLASS, null));
 			}
 		}
 		catch (ClassNotFoundException ex) {
@@ -71,7 +70,7 @@ class TomcatErrorPage {
 		catch (LinkageError ex) {
 			// Swallow and continue
 		}
-		return nativePage;
+		return null;
 	}
 
 	public void addToContext(Context context) {

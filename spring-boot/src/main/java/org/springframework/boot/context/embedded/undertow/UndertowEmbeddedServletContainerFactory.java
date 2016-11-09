@@ -110,8 +110,6 @@ public class UndertowEmbeddedServletContainerFactory
 
 	private Integer bufferSize;
 
-	private Integer buffersPerRegion;
-
 	private Integer ioThreads;
 
 	private Integer workerThreads;
@@ -122,7 +120,13 @@ public class UndertowEmbeddedServletContainerFactory
 
 	private String accessLogPattern;
 
+	private String accessLogPrefix;
+
+	private String accessLogSuffix;
+
 	private boolean accessLogEnabled = false;
+
+	private boolean accessLogRotate = true;
 
 	private boolean useForwardHeaders;
 
@@ -231,9 +235,6 @@ public class UndertowEmbeddedServletContainerFactory
 		Builder builder = Undertow.builder();
 		if (this.bufferSize != null) {
 			builder.setBufferSize(this.bufferSize);
-		}
-		if (this.buffersPerRegion != null) {
-			builder.setBuffersPerRegion(this.buffersPerRegion);
 		}
 		if (this.ioThreads != null) {
 			builder.setIoThreads(this.ioThreads);
@@ -408,8 +409,11 @@ public class UndertowEmbeddedServletContainerFactory
 	private AccessLogHandler createAccessLogHandler(HttpHandler handler) {
 		try {
 			createAccessLogDirectoryIfNecessary();
+			String prefix = (this.accessLogPrefix != null ? this.accessLogPrefix
+					: "access_log.");
 			AccessLogReceiver accessLogReceiver = new DefaultAccessLogReceiver(
-					createWorker(), this.accessLogDirectory, "access_log.");
+					createWorker(), this.accessLogDirectory, prefix,
+					this.accessLogSuffix, this.accessLogRotate);
 			String formatString = (this.accessLogPattern != null) ? this.accessLogPattern
 					: "common";
 			return new AccessLogHandler(handler, accessLogReceiver, formatString,
@@ -537,8 +541,9 @@ public class UndertowEmbeddedServletContainerFactory
 		this.bufferSize = bufferSize;
 	}
 
+	@Deprecated
 	public void setBuffersPerRegion(Integer buffersPerRegion) {
-		this.buffersPerRegion = buffersPerRegion;
+
 	}
 
 	public void setIoThreads(Integer ioThreads) {
@@ -561,12 +566,28 @@ public class UndertowEmbeddedServletContainerFactory
 		this.accessLogPattern = accessLogPattern;
 	}
 
+	public String getAccessLogPrefix() {
+		return this.accessLogPrefix;
+	}
+
+	public void setAccessLogPrefix(String accessLogPrefix) {
+		this.accessLogPrefix = accessLogPrefix;
+	}
+
+	public void setAccessLogSuffix(String accessLogSuffix) {
+		this.accessLogSuffix = accessLogSuffix;
+	}
+
 	public void setAccessLogEnabled(boolean accessLogEnabled) {
 		this.accessLogEnabled = accessLogEnabled;
 	}
 
 	public boolean isAccessLogEnabled() {
 		return this.accessLogEnabled;
+	}
+
+	public void setAccessLogRotate(boolean accessLogRotate) {
+		this.accessLogRotate = accessLogRotate;
 	}
 
 	protected final boolean isUseForwardHeaders() {
